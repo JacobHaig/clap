@@ -1710,7 +1710,7 @@ fn help_required_but_not_given() {
     App::new("myapp")
         .setting(AppSettings::HelpRequired)
         .arg(Arg::new("foo"))
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[cfg(debug_assertions)]
@@ -1720,7 +1720,7 @@ fn help_required_but_not_given_settings_after_args() {
     App::new("myapp")
         .arg(Arg::new("foo"))
         .setting(AppSettings::HelpRequired)
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[cfg(debug_assertions)]
@@ -1731,7 +1731,7 @@ fn help_required_but_not_given_for_one_of_two_arguments() {
         .setting(AppSettings::HelpRequired)
         .arg(Arg::new("foo"))
         .arg(Arg::new("bar").about("It does bar stuff"))
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[test]
@@ -1744,7 +1744,7 @@ fn help_required_locally_but_not_given_for_subcommand() {
                 .arg(Arg::new("create").about("creates bar"))
                 .arg(Arg::new("delete")),
         )
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[cfg(debug_assertions)]
@@ -1759,7 +1759,7 @@ fn help_required_globally_but_not_given_for_subcommand() {
                 .arg(Arg::new("create").about("creates bar"))
                 .arg(Arg::new("delete")),
         )
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[test]
@@ -1772,7 +1772,7 @@ fn help_required_and_given_for_subcommand() {
                 .arg(Arg::new("create").about("creates bar"))
                 .arg(Arg::new("delete").about("deletes bar")),
         )
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[test]
@@ -1780,48 +1780,12 @@ fn help_required_and_given() {
     App::new("myapp")
         .setting(AppSettings::HelpRequired)
         .arg(Arg::new("foo").about("It does foo stuff"))
-        .get_matches_from(empty_args());
+        .get_matches_from(&["test"]);
 }
 
 #[test]
 fn help_required_and_no_args() {
     App::new("myapp")
         .setting(AppSettings::HelpRequired)
-        .get_matches_from(empty_args());
-}
-
-#[test]
-fn issue_1642_long_help_spacing() {
-    let app = App::new("prog").arg(Arg::new("cfg").long("config").long_about(
-        "The config file used by the myprog must be in JSON format
-with only valid keys and may not contain other nonsense
-that cannot be read by this program. Obviously I'm going on
-and on, so I'll stop now.",
-    ));
-    assert!(utils::compare_output(app, "prog --help", ISSUE_1642, false));
-}
-
-const AFTER_HELP_NO_ARGS: &str = "myapp 1.0
-
-USAGE:
-    myapp
-
-This is after help.
-";
-
-#[test]
-fn after_help_no_args() {
-    let mut app = App::new("myapp")
-        .version("1.0")
-        .setting(AppSettings::DisableHelpFlags)
-        .setting(AppSettings::DisableVersion)
-        .after_help("This is after help.");
-
-    let help = {
-        let mut output = Vec::new();
-        app.write_help(&mut output).unwrap();
-        String::from_utf8(output).unwrap()
-    };
-
-    assert_eq!(help, AFTER_HELP_NO_ARGS);
+        .get_matches_from(&["test"]);
 }
