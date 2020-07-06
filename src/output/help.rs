@@ -103,11 +103,11 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     }
 
     /// Writes the parser help to the wrapped stream.
-    pub(crate) fn write_help(&mut self) -> ClapResult<()> {
+    pub(crate) fn write_help(&mut self) -> io::Result<()> {
         debug!("Help::write_help");
 
         if let Some(h) = self.parser.app.help_str {
-            self.none(h).map_err(Error::from)?;
+            self.none(h)?;
         } else if let Some(tmpl) = self.parser.app.template {
             self.write_templated_help(tmpl)?;
         } else {
@@ -675,7 +675,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
 impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     /// Writes help for all arguments (options, flags, args, subcommands)
     /// including titles of a Parser Object to the wrapped stream.
-    pub(crate) fn write_all_args(&mut self) -> ClapResult<()> {
+    pub(crate) fn write_all_args(&mut self) -> io::Result<()> {
         debug!("Help::write_all_args");
         let flags = self.parser.has_flags();
         let pos = self
