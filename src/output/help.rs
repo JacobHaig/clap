@@ -849,7 +849,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     /// For details about the template language see [`App::help_template`].
     ///
     /// [`App::help_template`]: ./struct.App.html#method.help_template
-    fn write_templated_help(&mut self, template: &str) -> ClapResult<()> {
+    fn write_templated_help(&mut self, template: &str) -> io::Result<()> {
         debug!("Help::write_templated_help");
 
         // The strategy is to copy the template from the reader to wrapped stream

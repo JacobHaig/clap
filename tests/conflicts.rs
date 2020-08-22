@@ -190,7 +190,7 @@ fn two_conflicting_arguments() {
     let a = a.unwrap_err();
     assert!(
         a.to_string()
-            .contains("The argument \'--develop\' cannot be used with \'--production\'"),
+            .contains("The argument \'--production\' cannot be used with \'--develop\'"),
         "{}",
         a
     );
@@ -220,7 +220,7 @@ fn three_conflicting_arguments() {
     let a = a.unwrap_err();
     assert!(
         a.to_string()
-            .contains("The argument \'--one\' cannot be used with \'--two\'"),
+            .contains("The argument \'--two\' cannot be used with \'--one\'"),
         "{}",
         a
     );

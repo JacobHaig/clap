@@ -284,7 +284,7 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
                     .map(|pos| format!(" [{}]{}", pos.name_no_brackets(), pos.multiple_str()))
                     .collect::<Vec<_>>()
                     .join(""),
-            );
+            )
         } else if !incl_reqs {
             debug!("Usage::get_args_tag:iter: incl_reqs=false, building secondary usage string");
             let highest_req_pos = self
@@ -311,7 +311,7 @@ impl<'help, 'app, 'parser> Usage<'help, 'app, 'parser> {
                     .map(|pos| format!(" [{}]{}", pos.name_no_brackets(), pos.multiple_str()))
                     .collect::<Vec<_>>()
                     .join(""),
-            );
+            )
         } else {
             Some("".into())
         }

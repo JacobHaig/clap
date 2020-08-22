@@ -146,7 +146,7 @@ impl<'help, 'app, 'parser> Validator<'help, 'app, 'parser> {
                     debug!("error");
                     return Err(Error::value_validation(
                         arg.to_string(),
-                        val,
+                        val.to_string_lossy().to_string(),
                         e,
                         self.p.app.color(),
                     ));

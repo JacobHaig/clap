@@ -351,12 +351,7 @@ impl ArgMatches {
                     v, name, e
                 );
 
-                Error::value_validation(
-                    name.to_string(),
-                    v.to_string(),
-                    message,
-                    ColorChoice::Auto,
-                )
+                Error::value_validation(name.to_string(), v.to_string(), message, ColorChoice::Auto)
             })
         } else {
             Err(Error::argument_not_found_auto(name))

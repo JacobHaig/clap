@@ -608,10 +608,6 @@ fn setup() -> App<'static> {
         .version("1.3")
 }
 
-fn empty_args() -> impl IntoIterator<Item = String> {
-    std::iter::empty()
-}
-
 #[test]
 fn help_short() {
     let m = setup().try_get_matches_from(vec!["myprog", "-h"]);
@@ -1788,4 +1784,40 @@ fn help_required_and_no_args() {
     App::new("myapp")
         .setting(AppSettings::HelpRequired)
         .get_matches_from(&["test"]);
+}
+
+#[test]
+fn issue_1642_long_help_spacing() {
+    let app = App::new("prog").arg(Arg::new("cfg").long("config").long_about(
+        "The config file used by the myprog must be in JSON format
+with only valid keys and may not contain other nonsense
+that cannot be read by this program. Obviously I'm going on
+and on, so I'll stop now.",
+    ));
+    assert!(utils::compare_output(app, "prog --help", ISSUE_1642, false));
+}
+
+const AFTER_HELP_NO_ARGS: &str = "myapp 1.0
+
+USAGE:
+    myapp
+
+This is after help.
+";
+
+#[test]
+fn after_help_no_args() {
+    let mut app = App::new("myapp")
+        .version("1.0")
+        .setting(AppSettings::DisableHelpFlags)
+        .setting(AppSettings::DisableVersion)
+        .after_help("This is after help.");
+
+    let help = {
+        let mut output = Vec::new();
+        app.write_help(&mut output).unwrap();
+        String::from_utf8(output).unwrap()
+    };
+
+    assert_eq!(help, AFTER_HELP_NO_ARGS);
 }
