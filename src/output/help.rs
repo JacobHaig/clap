@@ -3,7 +3,7 @@ use std::{
     borrow::Cow,
     cmp,
     collections::BTreeMap,
-    io::{self, Cursor, Read, Write},
+    io::{self, Write},
     usize,
 };
 
@@ -40,22 +40,6 @@ const TAB: &str = "    ";
 pub(crate) enum HelpWriter<'writer> {
     Normal(&'writer mut dyn Write),
     Buffer(&'writer mut Colorizer),
-}
-
-impl<'writer> Write for HelpWriter<'writer> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            HelpWriter::Normal(n) => n.write(buf),
-            HelpWriter::Buffer(c) => c.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            HelpWriter::Normal(n) => n.flush(),
-            HelpWriter::Buffer(c) => c.flush(),
-        }
-    }
 }
 
 /// `clap` Help Writer.
@@ -151,8 +135,11 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
 macro_rules! write_method {
     ($_self:ident, $msg:ident, $meth:ident) => {
         match &mut $_self.writer {
-            HelpWriter::Buffer(c) => c.$meth($msg),
-            HelpWriter::Normal(w) => write!(w, "{}", $msg),
+            HelpWriter::Buffer(c) => {
+                c.$meth(($msg).into());
+                Ok(())
+            }
+            HelpWriter::Normal(w) => w.write_all($msg.as_ref()),
         }
     };
 }
@@ -168,15 +155,15 @@ macro_rules! write_nspaces {
 
 // Methods to write Arg help.
 impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
-    fn good(&mut self, msg: &str) -> io::Result<()> {
+    fn good<T: Into<String> + AsRef<[u8]>>(&mut self, msg: T) -> io::Result<()> {
         write_method!(self, msg, good)
     }
 
-    fn warning(&mut self, msg: &str) -> io::Result<()> {
+    fn warning<T: Into<String> + AsRef<[u8]>>(&mut self, msg: T) -> io::Result<()> {
         write_method!(self, msg, warning)
     }
 
-    fn none(&mut self, msg: &str) -> io::Result<()> {
+    fn none<T: Into<String> + AsRef<[u8]>>(&mut self, msg: T) -> io::Result<()> {
         write_method!(self, msg, none)
     }
 
@@ -848,7 +835,7 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
         }
         if let Some(bn) = self.parser.app.bin_name.as_ref() {
             if bn.contains(' ') {
-                // Incase we're dealing with subcommands i.e. git mv is translated to git-mv
+                // In case we're dealing with subcommands i.e. git mv is translated to git-mv
                 self.good(&bn.replace(" ", "-"))?
             } else {
                 write_name!();
@@ -857,103 +844,6 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
             write_name!();
         }
         Ok(())
-    }
-}
-
-/// Possible results for a copying function that stops when a given
-/// byte was found.
-enum CopyUntilResult {
-    DelimiterFound(usize),
-    DelimiterNotFound(usize),
-    ReaderEmpty,
-    ReadError(io::Error),
-    WriteError(io::Error),
-}
-
-/// Copies the contents of a reader into a writer until a delimiter byte is found.
-/// On success, the total number of bytes that were
-/// copied from reader to writer is returned.
-fn copy_until<R: Read, W: Write>(r: &mut R, w: &mut W, delimiter_byte: u8) -> CopyUntilResult {
-    debug!("copy_until");
-
-    let mut count = 0;
-    for wb in r.bytes() {
-        match wb {
-            Ok(b) => {
-                if b == delimiter_byte {
-                    return CopyUntilResult::DelimiterFound(count);
-                }
-                match w.write(&[b]) {
-                    Ok(c) => count += c,
-                    Err(e) => return CopyUntilResult::WriteError(e),
-                }
-            }
-            Err(e) => return CopyUntilResult::ReadError(e),
-        }
-    }
-    if count > 0 {
-        CopyUntilResult::DelimiterNotFound(count)
-    } else {
-        CopyUntilResult::ReaderEmpty
-    }
-}
-
-/// Copies the contents of a reader into a writer until a {tag} is found,
-/// copying the tag content to a buffer and returning its size.
-/// In addition to errors, there are three possible outputs:
-///   - `None`: The reader was consumed.
-///   - `Some(Ok(0))`: No tag was captured but the reader still contains data.
-///   - `Some(Ok(length>0))`: a tag with `length` was captured to the `tag_buffer`.
-fn copy_and_capture<R: Read, W: Write>(
-    r: &mut R,
-    w: &mut W,
-    tag_buffer: &mut Cursor<Vec<u8>>,
-) -> Option<io::Result<usize>> {
-    use self::CopyUntilResult::*;
-    debug!("copy_and_capture");
-
-    // Find the opening byte.
-    match copy_until(r, w, b'{') {
-        // The end of the reader was reached without finding the opening tag.
-        // (either with or without having copied data to the writer)
-        // Return None indicating that we are done.
-        ReaderEmpty | DelimiterNotFound(_) => None,
-
-        // Something went wrong.
-        ReadError(e) | WriteError(e) => Some(Err(e)),
-
-        // The opening byte was found.
-        // (either with or without having copied data to the writer)
-        DelimiterFound(_) => {
-            // Lets reset the buffer first and find out how long it is.
-            tag_buffer.set_position(0);
-            let buffer_size = tag_buffer.get_ref().len();
-
-            // Find the closing byte,limiting the reader to the length of the buffer.
-            let mut rb = r.take(buffer_size as u64);
-            match copy_until(&mut rb, tag_buffer, b'}') {
-                // We were already at the end of the reader.
-                // Return None indicating that we are done.
-                ReaderEmpty => None,
-
-                // The closing tag was found.
-                // Return the tag_length.
-                DelimiterFound(tag_length) => Some(Ok(tag_length)),
-
-                // The end of the reader was found without finding the closing tag.
-                // Write the opening byte and captured text to the writer.
-                // Return 0 indicating that nothing was captured but the reader still contains data.
-                DelimiterNotFound(not_tag_length) => match w.write(b"{") {
-                    Err(e) => Some(Err(e)),
-                    _ => match w.write(&tag_buffer.get_ref()[0..not_tag_length]) {
-                        Err(e) => Some(Err(e)),
-                        _ => Some(Ok(0)),
-                    },
-                },
-
-                ReadError(e) | WriteError(e) => Some(Err(e)),
-            }
-        }
     }
 }
 
@@ -966,8 +856,6 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
     /// [`App::help_template`]: ./struct.App.html#method.help_template
     fn write_templated_help(&mut self, template: &str) -> ClapResult<()> {
         debug!("Help::write_templated_help");
-        let mut tmplr = Cursor::new(&template);
-        let mut tag_buf = Cursor::new(vec![0u8; 20]);
 
         // The strategy is to copy the template from the reader to wrapped stream
         // until a tag is found. Depending on its value, the appropriate content is copied
@@ -975,127 +863,147 @@ impl<'help, 'app, 'parser, 'writer> Help<'help, 'app, 'parser, 'writer> {
         // The copy from template is then resumed, repeating this sequence until reading
         // the complete template.
 
-        loop {
-            let tag_length = match copy_and_capture(&mut tmplr, &mut self.writer, &mut tag_buf) {
-                None => return Ok(()),
-                Some(Err(e)) => return Err(Error::from(e)),
-                Some(Ok(val)) if val > 0 => val,
-                _ => continue,
-            };
+        macro_rules! tags {
+            (
+                match $part:ident {
+                    $( $tag:expr => $action:stmt )*
+                }
+            ) => {
+                match $part {
+                    $(
+                        part if part.starts_with(concat!($tag, "}")) => {
+                            $action
+                            let rest = &part[$tag.len()+1..];
+                            self.none(rest)?;
+                        }
+                    )*
 
-            debug!(
-                "Help::write_template_help:iter: tag_buf={}",
-                String::from_utf8_lossy(&tag_buf.get_ref()[0..tag_length])
-            );
-            match &tag_buf.get_ref()[0..tag_length] {
-                b"?" => {
-                    self.none("Could not decode tag name")?;
-                }
-                b"bin" => {
-                    self.write_bin_name()?;
-                }
-                b"version" => {
-                    if let Some(output) = self.parser.app.version {
-                        self.none(output)?;
+                    // Unknown tag, write it back.
+                    part => {
+                        self.none("{")?;
+                        self.none(part)?;
                     }
                 }
-                b"author" => {
-                    if let Some(output) = self.parser.app.author {
-                        self.none(&wrap_help(output, self.term_w))?;
+            };
+        }
+
+        let mut parts = template.split('{');
+        if let Some(first) = parts.next() {
+            self.none(first)?;
+        }
+
+        for part in parts {
+            self.none(part)?;
+
+            tags! {
+                match part {
+                    "bin" => {
+                        self.write_bin_name()?;
                     }
-                }
-                b"author-with-newline" => {
-                    if let Some(output) = self.parser.app.author {
-                        self.none(&wrap_help(output, self.term_w))?;
-                        self.none("\n")?;
+                    "version" => {
+                        if let Some(s) = self.parser.app.version {
+                            self.none(s)?;
+                        }
                     }
-                }
-                b"about" => {
-                    let about = if self.use_long {
-                        self.parser.app.long_about.or(self.parser.app.about)
-                    } else {
-                        self.parser.app.about
-                    };
-                    if let Some(output) = about {
-                        self.none(&wrap_help(output, self.term_w))?;
+                    "author" => {
+                        if let Some(s) = self.parser.app.author {
+                            self.none(&wrap_help(s, self.term_w))?;
+                        }
                     }
-                }
-                b"about-with-newline" => {
-                    let about = if self.use_long {
-                        self.parser.app.long_about.or(self.parser.app.about)
-                    } else {
-                        self.parser.app.about
-                    };
-                    if let Some(output) = about {
-                        self.none(&wrap_help(output, self.term_w))?;
-                        self.none("\n")?;
+                    "author-with-newline" => {
+                        if let Some(s) = self.parser.app.author {
+                            self.none(&wrap_help(s, self.term_w))?;
+                            self.none("\n")?;
+                        }
                     }
-                }
-                b"usage" => {
-                    self.none(&Usage::new(self.parser).create_usage_no_title(&[]))?;
-                }
-                b"all-args" => {
-                    self.write_all_args()?;
-                }
-                b"unified" => {
-                    let opts_flags = self
-                        .parser
-                        .app
-                        .args
-                        .args
-                        .iter()
-                        .filter(|a| a.has_switch())
-                        .collect::<Vec<_>>();
-                    self.write_args(&opts_flags)?;
-                }
-                b"flags" => {
-                    self.write_args(&self.parser.app.get_flags_no_heading().collect::<Vec<_>>())?;
-                }
-                b"options" => {
-                    self.write_args(&self.parser.app.get_opts_no_heading().collect::<Vec<_>>())?;
-                }
-                b"positionals" => {
-                    self.write_args(&self.parser.app.get_positionals().collect::<Vec<_>>())?;
-                }
-                b"subcommands" => {
-                    self.write_subcommands(self.parser.app)?;
-                }
-                b"after-help" => {
-                    let after_help = if self.use_long {
-                        self.parser
+                    "about" => {
+                        let about = if self.use_long {
+                            self.parser.app.long_about.or(self.parser.app.about)
+                        } else {
+                            self.parser.app.about
+                        };
+                        if let Some(output) = about {
+                            self.none(wrap_help(output, self.term_w))?;
+                        }
+                    }
+                    "about-with-newline" => {
+                        let about = if self.use_long {
+                            self.parser.app.long_about.or(self.parser.app.about)
+                        } else {
+                            self.parser.app.about
+                        };
+                        if let Some(output) = about {
+                            self.none(wrap_help(output, self.term_w))?;
+                            self.none("\n")?;
+                        }
+                    }
+                    "long-about" => {
+                        if let Some(s) = self.parser.app.long_about {
+                            self.none(s)?;
+                        }
+                    }
+                    "usage" => {
+                        self.none(Usage::new(self.parser).create_usage_no_title(&[]))?;
+                    }
+                    "all-args" => {
+                        self.write_all_args()?;
+                    }
+                    "unified" => {
+                        let opts_flags = self
+                            .parser
                             .app
-                            .after_long_help
-                            .or(self.parser.app.after_help)
-                    } else {
-                        self.parser.app.after_help
-                    };
-                    if let Some(output) = after_help {
-                        self.none("\n\n")?;
-                        self.write_before_after_help(output)?;
+                            .args
+                            .args
+                            .iter()
+                            .filter(|a| a.has_switch())
+                            .collect::<Vec<_>>();
+                        self.write_args(&opts_flags)?;
                     }
-                }
-                b"before-help" => {
-                    let before_help = if self.use_long {
-                        self.parser
-                            .app
-                            .before_long_help
-                            .or(self.parser.app.before_help)
-                    } else {
-                        self.parser.app.before_help
-                    };
-                    if let Some(output) = before_help {
-                        self.write_before_after_help(output)?;
-                        self.none("\n\n")?;
+                    "flags" => {
+                        self.write_args(&self.parser.app.get_flags_no_heading().collect::<Vec<_>>())?;
                     }
-                }
-                // Unknown tag, write it back.
-                r => {
-                    self.none("{")?;
-                    self.writer.write_all(r)?;
-                    self.none("}")?;
+                    "options" => {
+                        self.write_args(&self.parser.app.get_opts_no_heading().collect::<Vec<_>>())?;
+                    }
+                    "positionals" => {
+                        self.write_args(&self.parser.app.get_positionals().collect::<Vec<_>>())?;
+                    }
+                    "subcommands" => {
+                        self.write_subcommands(self.parser.app)?;
+                    }
+                    "after-help" => {
+                        let after_help = if self.use_long {
+                            self.parser
+                                .app
+                                .after_long_help
+                                .or(self.parser.app.after_help)
+                        } else {
+                            self.parser.app.after_help
+                        };
+                        if let Some(output) = after_help {
+                            self.none("\n\n")?;
+                            self.write_before_after_help(output)?;
+                        }
+                    }
+                    "before-help" => {
+                        let before_help = if self.use_long {
+                            self.parser
+                                .app
+                                .before_long_help
+                                .or(self.parser.app.before_help)
+                        } else {
+                            self.parser.app.before_help
+                        };
+                        if let Some(output) = before_help {
+                            self.write_before_after_help(output)?;
+                            self.none("\n\n")?;
+                        }
+                    }
                 }
             }
         }
+
+        Ok(())
     }
 }
 
